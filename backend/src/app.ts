@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import { AppDataSource } from "./config/database";
 import mockupRoutes from "./routes/mockup.routes";
+import stateRoutes from "./routes/state.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -12,6 +13,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/mockups", mockupRoutes);
+app.use("/api/state", stateRoutes);  // endpoints get_state / set_state para BettyMind
 app.use(errorHandler);
 
 AppDataSource.initialize()

@@ -1,0 +1,91 @@
+[
+  {
+    "name": "get_state",
+    "description": "Retrieves the current persisted state from the DesignLink store. Must be called before answering any question about mockups, config, or board status. Never answer from memory — always read state first.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": ["mockups", "config"],
+          "description": "The state key to retrieve. Omit to get the full state (mockups + config)."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "set_state",
+    "description": "Persists an update to a specific state key in the DesignLink store. Must be called before confirming any add, update, or deactivation to the user. A confirmation like 'I've added X' is only valid after this tool returns ok: true.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": ["mockups", "config"],
+          "description": "The state key to update."
+        },
+        "value": {
+          "description": "The new value for the key. For 'mockups': the full updated array of mockup records. For 'config': the full updated config object.",
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "Array of mockup records (used when key is 'mockups').",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "proyecto": { "type": "string" },
+                  "cliente": { "type": "string" },
+                  "descripcion": { "type": "string" },
+                  "feedbackEstado": {
+                    "type": "string",
+                    "enum": ["Pendiente", "En revisión", "Aprobado", "Rechazado"]
+                  },
+                  "feedbackComentario": { "type": ["string", "null"] },
+                  "diseno": { "type": "string" },
+                  "url": { "type": ["string", "null"] },
+                  "disponible": { "type": "boolean" },
+                  "creadoEn": { "type": "string", "format": "date-time" },
+                  "actualizadoEn": { "type": "string", "format": "date-time" },
+                  "actualizadoPor": { "type": ["string", "null"] }
+                },
+                "required": ["proyecto", "cliente", "descripcion", "diseno"]
+              }
+            },
+            {
+              "type": "object",
+              "description": "Config object (used when key is 'config').",
+              "properties": {
+                "alertas": {
+                  "type": "object",
+                  "properties": {
+                    "diasPendienteUmbral": { "type": "number" },
+                    "accion": { "type": "string", "enum": ["warn", "escalate", "block"] },
+                    "notificarA": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  },
+                  "required": ["diasPendienteUmbral", "accion"]
+                },
+                "feedbackEstados": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "updatedAt": { "type": "string", "format": "date-time" },
+                "updatedBy": { "type": ["string", "null"] }
+              },
+              "required": ["alertas", "feedbackEstados"]
+            }
+          ]
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Email or identifier of the user who triggered the state change."
+        }
+      },
+      "required": ["key", "value"]
+    }
+  }
+]
