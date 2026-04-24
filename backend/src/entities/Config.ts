@@ -1,7 +1,7 @@
 import { Entity, PrimaryColumn, Column, UpdateDateColumn } from "typeorm";
 
-// Almacena configuración del agente como pares clave-valor JSON.
-// Key "config" contiene umbrales de alertas y estados permitidos.
+// Almacena configuración y versiones del agente como pares clave-valor JSON.
+// version: incremental por key por escritura — equivalente al version de DynamoDB en Betty Finance.
 @Entity("config")
 export class Config {
   @PrimaryColumn({ type: "varchar", length: 100 })
@@ -9,6 +9,9 @@ export class Config {
 
   @Column({ type: "text" })
   value!: string; // JSON.stringify del objeto
+
+  @Column({ type: "integer", default: 1 })
+  version!: number;
 
   @UpdateDateColumn()
   updatedAt!: Date;

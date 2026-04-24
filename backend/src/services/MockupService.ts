@@ -1,7 +1,9 @@
 import { Mockup, FeedbackEstado } from "../entities/Mockup";
 import { MockupRepository } from "../repositories/MockupRepository";
+import { ProjectService } from "./ProjectService";
 
 export interface CreateMockupDTO {
+  proyectoSlug: string;
   proyecto: string;
   cliente: string;
   descripcion: string;
@@ -29,17 +31,17 @@ export interface ServiceResult<T> {
   error?: string;
 }
 
-// Capa de lógica de negocio. Aplica las reglas del agente DesignLink antes de persistir.
 export class MockupService {
   private repository: MockupRepository;
+  private projectService: ProjectService;
 
   constructor() {
     this.repository = new MockupRepository();
+    this.projectService = new ProjectService();
   }
 
   async getAll(): Promise<ServiceResult<Mockup[]>> {
-    const data = await this.repository.findAll();
-    return { ok: true, data };
+    return { ok: true, data: await this.repository.findAll() };
   }
 
   async getById(id: number): Promise<ServiceResult<Mockup>> {
@@ -49,19 +51,16 @@ export class MockupService {
   }
 
   async create(dto: CreateMockupDTO): Promise<ServiceResult<Mockup>> {
-    // Regla: proyecto es campo obligatorio
-    if (!dto.proyecto?.trim()) {
-      return { ok: false, error: "Bloqueado: el campo 'proyecto' es obligatorio." };
-    }
-    if (!dto.cliente?.trim()) {
-      return { ok: false, error: "Bloqueado: el campo 'cliente' es obligatorio." };
-    }
-    if (!dto.descripcion?.trim()) {
-      return { ok: false, error: "Bloqueado: el campo 'descripcion' es obligatorio." };
-    }
-    if (!dto.diseno?.trim()) {
-      return { ok: false, error: "Bloqueado: el campo 'diseno' es obligatorio." };
-    }
+    // Validación de campos obligatorios
+    if (!dto.proyectoSlug?.trim()) return { ok: false, error: "Bloqueado: el campo 'proyectoSlug' es obligatorio." };
+    if (!dto.proyecto?.trim())     return { ok: false, error: "Bloqueado: el campo 'proyecto' es obligatorio." };
+    if (!dto.cliente?.trim())      return { ok: false, error: "Bloqueado: el campo 'cliente' es obligatorio." };
+    if (!dto.descripcion?.trim())  return { ok: false, error: "Bloqueado: el campo 'descripcion' es obligatorio." };
+    if (!dto.diseno?.trim())       return { ok: false, error: "Bloqueado: el campo 'diseno' es obligatorio." };
+
+    // Validación contra catálogo de proyectos — equivalente a la validación de team slug en Betty Finance
+    const slugValidation = await this.projectService.validateSlug(dto.proyectoSlug);
+    if (!slugValidation.valid) return { ok: false, error: slugValidation.error };
 
     const mockup = this.repository.create({
       ...dto,
@@ -81,14 +80,11 @@ export class MockupService {
 
     const mockup = result.data;
 
-    // Regla: no se puede marcar Aprobado sin URL cargada
+    // Regla: no se puede marcar Aprobado sin URL
     if (dto.feedbackEstado === FeedbackEstado.APROBADO) {
       const urlFinal = dto.url ?? mockup.url;
       if (!urlFinal?.trim()) {
-        return {
-          ok: false,
-          error: "Bloqueado: no se puede marcar Aprobado — el campo 'url' está vacío. Agrega la URL antes de cambiar el estado.",
-        };
+        return { ok: false, error: "Bloqueado: no se puede marcar Aprobado — url está vacío. Agrega la URL antes de cambiar el estado." };
       }
     }
 
@@ -97,34 +93,25 @@ export class MockupService {
     return { ok: true, data: saved };
   }
 
-  // Desactiva sin eliminar — equivalente a set disponible: false
   async toggleDisponible(id: number, disponible: boolean): Promise<ServiceResult<Mockup>> {
     const result = await this.getById(id);
     if (!result.ok || !result.data) return result as ServiceResult<Mockup>;
-
     result.data.disponible = disponible;
-    const saved = await this.repository.save(result.data);
-    return { ok: true, data: saved };
+    return { ok: true, data: await this.repository.save(result.data) };
   }
 
   async getSummary(): Promise<ServiceResult<Record<string, unknown>>> {
     const mockups = await this.repository.findAll();
-
     const porEstado = mockups.reduce<Record<string, number>>((acc, m) => {
       acc[m.feedbackEstado] = (acc[m.feedbackEstado] || 0) + 1;
       return acc;
     }, {});
 
-    // Alerta: registros disponible:true sin URL
     const sinUrlDisponibles = mockups.filter((m) => m.disponible && !m.url);
-
-    // Alerta: pendientes con más de 7 días sin actualización
-    const umbralDias = 7;
-    const hoy = new Date();
+    const ahora = new Date();
     const pendientesEstancados = mockups.filter((m) => {
       if (m.feedbackEstado !== FeedbackEstado.PENDIENTE) return false;
-      const diasDesdeCreacion = (hoy.getTime() - new Date(m.creadoEn).getTime()) / (1000 * 60 * 60 * 24);
-      return diasDesdeCreacion > umbralDias;
+      return (ahora.getTime() - new Date(m.creadoEn).getTime()) / (1000 * 60 * 60 * 24) > 7;
     });
 
     return {

@@ -1,14 +1,14 @@
 [
   {
     "name": "get_state",
-    "description": "Retrieves the current persisted state from the DesignLink store. Must be called before answering any question about mockups, config, or board status. Never answer from memory — always read state first.",
+    "description": "Retrieves the current persisted state from the DesignLink AgentState store. Must be called before answering any question about mockups, projects, config, or board status. Never answer from memory — always read state first. If state is empty or missing, say so explicitly and ask the user to initialize data before proceeding.",
     "input_schema": {
       "type": "object",
       "properties": {
         "key": {
           "type": "string",
-          "enum": ["mockups", "config"],
-          "description": "The state key to retrieve. Omit to get the full state (mockups + config)."
+          "enum": ["mockups", "projects", "config"],
+          "description": "The state key to retrieve. Omit to get the full state (mockups + projects + config)."
         }
       },
       "required": []
@@ -16,17 +16,17 @@
   },
   {
     "name": "set_state",
-    "description": "Persists an update to a specific state key in the DesignLink store. Must be called before confirming any add, update, or deactivation to the user. A confirmation like 'I've added X' is only valid after this tool returns ok: true.",
+    "description": "Persists an update to a specific state key in the DesignLink AgentState store. Must be called before confirming any add, update, or deactivation to the user. A confirmation like 'I've added X' is only valid after this tool returns ok: true. After every set_state call, all active alert rules in config.alertas are evaluated automatically (evaluationFrequency: on_every_set_state) and triggered alerts are returned in the response.",
     "input_schema": {
       "type": "object",
       "properties": {
         "key": {
           "type": "string",
-          "enum": ["mockups", "config"],
+          "enum": ["mockups", "projects", "config"],
           "description": "The state key to update."
         },
         "value": {
-          "description": "The new value for the key. For 'mockups': the full updated array of mockup records. For 'config': the full updated config object.",
+          "description": "The new value for the key. For 'mockups': the full updated array of mockup records. For 'projects': the full updated array of project records. For 'config': the full updated config object including alertas with snapshots.",
           "oneOf": [
             {
               "type": "array",
@@ -34,23 +34,39 @@
               "items": {
                 "type": "object",
                 "properties": {
-                  "id": { "type": "string" },
-                  "proyecto": { "type": "string" },
-                  "cliente": { "type": "string" },
-                  "descripcion": { "type": "string" },
-                  "feedbackEstado": {
-                    "type": "string",
-                    "enum": ["Pendiente", "En revisión", "Aprobado", "Rechazado"]
-                  },
+                  "id":                 { "type": "string" },
+                  "proyectoSlug":       { "type": "string", "description": "Must exist in the projects catalog." },
+                  "proyecto":           { "type": "string" },
+                  "cliente":            { "type": "string" },
+                  "descripcion":        { "type": "string" },
+                  "feedbackEstado":     { "type": "string", "enum": ["Pendiente", "En revisión", "Aprobado", "Rechazado"] },
                   "feedbackComentario": { "type": ["string", "null"] },
-                  "diseno": { "type": "string" },
-                  "url": { "type": ["string", "null"] },
-                  "disponible": { "type": "boolean" },
-                  "creadoEn": { "type": "string", "format": "date-time" },
-                  "actualizadoEn": { "type": "string", "format": "date-time" },
-                  "actualizadoPor": { "type": ["string", "null"] }
+                  "diseno":             { "type": "string" },
+                  "url":                { "type": ["string", "null"] },
+                  "disponible":         { "type": "boolean" },
+                  "creadoEn":           { "type": "string", "format": "date-time" },
+                  "actualizadoEn":      { "type": "string", "format": "date-time" },
+                  "actualizadoPor":     { "type": ["string", "null"] }
                 },
-                "required": ["proyecto", "cliente", "descripcion", "diseno"]
+                "required": ["proyectoSlug", "proyecto", "cliente", "descripcion", "diseno"]
+              }
+            },
+            {
+              "type": "array",
+              "description": "Array of project records (used when key is 'projects').",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id":           { "type": "string" },
+                  "slug":         { "type": "string" },
+                  "name":         { "type": "string" },
+                  "cliente":      { "type": "string" },
+                  "lead":         { "type": ["string", "null"] },
+                  "active":       { "type": "boolean" },
+                  "creadoEn":     { "type": "string", "format": "date-time" },
+                  "actualizadoEn":{ "type": "string", "format": "date-time" }
+                },
+                "required": ["slug", "name", "cliente"]
               }
             },
             {
@@ -58,23 +74,59 @@
               "description": "Config object (used when key is 'config').",
               "properties": {
                 "alertas": {
-                  "type": "object",
-                  "properties": {
-                    "diasPendienteUmbral": { "type": "number" },
-                    "accion": { "type": "string", "enum": ["warn", "escalate", "block"] },
-                    "notificarA": {
-                      "type": "array",
-                      "items": { "type": "string" }
-                    }
-                  },
-                  "required": ["diasPendienteUmbral", "accion"]
-                },
-                "feedbackEstados": {
                   "type": "array",
-                  "items": { "type": "string" }
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id":     { "type": "string" },
+                      "key":    { "type": "string" },
+                      "label":  { "type": "string" },
+                      "threshold": {
+                        "type": "object",
+                        "properties": {
+                          "levels": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "type":       { "type": "string", "enum": ["warning", "critical"] },
+                                "diasUmbral": { "type": "number" },
+                                "count":      { "type": "number" },
+                                "action":     { "type": "string", "enum": ["warn", "escalate", "block"] }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "alertWhen": {
+                        "type": "object",
+                        "properties": {
+                          "condition":          { "type": "string", "enum": ["pendiente_sin_actualizar", "disponible_sin_url"] },
+                          "evaluationFrequency":{ "type": "string", "enum": ["on_every_set_state"] }
+                        },
+                        "required": ["condition", "evaluationFrequency"]
+                      },
+                      "severity":     { "type": "string", "enum": ["warning", "critical"] },
+                      "action":       { "type": "string", "enum": ["warn", "escalate", "block"] },
+                      "notifyTo":     { "type": "array", "items": { "type": "string" } },
+                      "cooldownHours":{ "type": "number" },
+                      "active":       { "type": "boolean" },
+                      "snapshot": {
+                        "type": "object",
+                        "properties": {
+                          "affectedIds": { "type": "array" },
+                          "count":       { "type": "number" },
+                          "triggeredAt": { "type": ["string", "null"] },
+                          "triggered":   { "type": "boolean" }
+                        }
+                      }
+                    },
+                    "required": ["id", "key", "alertWhen", "active"]
+                  }
                 },
-                "updatedAt": { "type": "string", "format": "date-time" },
-                "updatedBy": { "type": ["string", "null"] }
+                "feedbackEstados": { "type": "array", "items": { "type": "string" } },
+                "updatedAt":       { "type": "string", "format": "date-time" },
+                "updatedBy":       { "type": ["string", "null"] }
               },
               "required": ["alertas", "feedbackEstados"]
             }
