@@ -24,3 +24,5 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .idea/
+node_modules/
+*.sqlite
